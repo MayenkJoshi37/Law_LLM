@@ -30,16 +30,13 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Access the interface at:
-
-cpp
-Copy
-Edit
+## Access the interface at:
+```
 http://127.0.0.1:5000/
-🗂️ Project Structure
-graphql
-Copy
-Edit
+```
+
+##🗂️ Project Structure
+```
 .
 ├─ app.py
 ├─ requirements.txt
@@ -47,88 +44,88 @@ Edit
 │  ├─ uploads/       # Storage for uploaded docs
 │  └─ chat_logs/     # JSON logs of chat sessions
 └─ chroma_db/        # Persistent ChromaDB database files
-🚀 Core Endpoints
-Endpoint	Method	Description
-/	GET	Serve the frontend (index.html)
-/upload	POST	Upload .txt or .pdf files and add to vector database
-/chat	POST	Send message → retrieve context → generate response
-/clear_chat	POST	Reset session memory
+```
 
-🧠 How It Works
-Document Upload & Embedding
+---
 
-Upload files (.txt or .pdf)
+## 🚀 Core Endpoints
 
-Extract text (PyMuPDF), segment by paragraphs
+| Endpoint       | Method | Description                                                  |
+|----------------|--------|--------------------------------------------------------------|
+| `/`            | GET    | Serve the frontend (`index.html`)                            |
+| `/upload`      | POST   | Upload `.txt` or `.pdf` and add to vector database           |
+| `/chat`        | POST   | Send message → retrieve context → generate response          |
+| `/clear_chat`  | POST   | Reset session memory                                         |
 
-Embed chunks and store them in ChromaDB with IDs
+---
 
-Chat & Retrieval Loop
+## 🧠 How It Works
 
-Compute query embedding → retrieve top‑k relevant chunks
+### Document Upload & Embedding
+- Upload `.txt` or `.pdf` files  
+- Extract text using PyMuPDF, segment by paragraphs  
+- Embed text chunks and store in ChromaDB with unique IDs  
 
-Build a prompt combining: session summary, retrieved context, system instructions
+### Chat & Retrieval Loop
+- Encode user query → retrieve top‑k relevant text chunks  
+- Build a prompt using session summary, retrieved context, and Indian-law instructions  
+- LLM generates structured bullet‑point responses focused on Indian legal context  
 
-LLM generates response in bullet‑point style focused on Indian law
+### Session Summarization & Logging
+- Summarize the last 6 messages to maintain conversational coherence  
+- Save full history, retrieved chunks, prompt, and response into JSON logs  
 
-Session Summarization & Logging
+---
 
-Summarize last 6 messages to maintain context
+## 💬 Response Style
 
-Save chat history, retrieved chunks, and final prompt into JSON logs
+- Delivered as **bullet‑point summaries**  
+- Tone: Professional, clear, helpful, and polite  
+- Focuses on Indian laws; clarifies non‑Indian jurisdiction questions politely  
 
-💬 Response Style
-Responses are delivered as bullet‑point summaries
+---
 
-Tone: Professional, clear, helpful, and polite
+## 🛠️ Customization Suggestions
 
-Emphasis on Indian laws; for non‑Indian queries the bot will clarify its jurisdiction
+- Swap or fine‑tune the embedding model (`sentence‑transformers`)  
+- Adjust paragraph chunk size or add overlap for better retrieval  
+- Modify retrieval count via `n_results`  
+- Refine summarization logic or modify prompts  
+- Upgrade markdown rendering or integrate a richer UI frontend  
+- Add support for regional languages (e.g. Hindi)  
 
-🛠️ Customization Suggestions
-Swap or fine‑tune the embedding model (sentence-transformers)
+---
 
-Adjust chunk size or add overlap for better retrieval results
+## ⚠️ Cautions & Limitations
 
-Modify the retrieval count (n_results)
+- ❗ **Not legal advice** — intended for informational purposes only  
+- Accuracy depends on uploaded documents and LLM performance  
+- Sensitive document handling and local logs must comply with privacy best practices  
 
-Customize the summarization prompt or session memory logic
+---
 
-Upgrade markdown rendering or integrate rich UI frontend
+## 🧪 Why This Matters
 
-Extend support for regional languages, e.g., Hindi
+- Enables document-based question answering specific to the Indian legal context  
+- Combines retrieval, summarization, and generative LLM in a user‑friendly chatbot  
+- Valuable for legal literacy, education, and preliminary legal research  
 
-⚠️ Cautions & Limitations
-❗ Not a substitute for legal advice – for information only
+---
 
-Accuracy depends on uploaded documents and LLM responses
+## 🏛️ License & Contributions
 
-Sensitive doc handling and local JSON logs require careful privacy practices
+- **License:** ChromaDB is open source under the **Apache 2.0 License** :contentReference[oaicite:2]{index=2}  
+- **Contributing Ideas:**
+  - Add curated Indian legal datasets (e.g. IPC sections, Supreme Court judgments)  
+  - Improve prompt engineering for fairness and accuracy  
+  - Enhance session memory and summarization strategy  
+  - Support scanned PDFs, multilingual input, or speech interfaces  
 
-🧪 Why This Matters
-Enables document-based question answering within the Indian legal domain
+---
 
-Combines retrieval, summarization, and an LLM into a coherent user‑friendly chatbot
+## ✅ Quick Summary
 
-Useful for legal literacy, education, and preliminary research
-
-🏛️ License & Contributions
-📝 License: (Specify your chosen license, e.g. MIT or Apache 2.0)
-
-💡 Contributing Ideas:
-
-Add curated Indian legal datasets (e.g. IPC sections, Supreme Court judgments)
-
-Refine prompts for fairness and accuracy in legal contexts
-
-Improve session memory and summarization strategy
-
-Expand beyond text—allow scanned PDFs, multilingual input, or speech interfaces
-
-✅ Quick Summary
-Upload legal documents → index them via embedding + ChromaDB
-
-Chat queries answered with context + LLM responses
-
-Focuses on Indian legal knowledge, delivered in concise bullets
-
-Logs interactions and provides summaries for continuity
+- Upload legal documents → index via embeddings + ChromaDB  
+- User queries answered with retrieved context + LLM-generated responses  
+- Focus on Indian legal knowledge, delivered concisely in bullet points  
+- Conversations are logged and summarized for continuity  
