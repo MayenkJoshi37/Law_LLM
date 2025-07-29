@@ -104,17 +104,8 @@ http://127.0.0.1:5000/
 
 ---
 
-## 🧪 Why This Matters
+## 🏛️ Contributions
 
-- Enables document-based question answering specific to the Indian legal context  
-- Combines retrieval, summarization, and generative LLM in a user‑friendly chatbot  
-- Valuable for legal literacy, education, and preliminary legal research  
-
----
-
-## 🏛️ License & Contributions
-
-- **License:** ChromaDB is open source under the **Apache 2.0 License** :contentReference[oaicite:2]{index=2}  
 - **Contributing Ideas:**
   - Add curated Indian legal datasets (e.g. IPC sections, Supreme Court judgments)  
   - Improve prompt engineering for fairness and accuracy  
