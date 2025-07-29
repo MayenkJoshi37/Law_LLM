@@ -28,6 +28,8 @@ git clone https://github.com/MayenkJoshi37/Law_LLM.git
 cd Law_LLM
 pip install -r requirements.txt
 python app.py
+```
+
 Access the interface at:
 
 cpp
