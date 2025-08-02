@@ -96,14 +96,6 @@ http://127.0.0.1:5000/
 
 ---
 
-## ⚠️ Cautions & Limitations
-
-- ❗ **Not legal advice** — intended for informational purposes only  
-- Accuracy depends on uploaded documents and LLM performance  
-- Sensitive document handling and local logs must comply with privacy best practices  
-
----
-
 ## 🏛️ Contributions
 
 - **Contributing Ideas:**
