@@ -1,114 +1,101 @@
-# 🇮🇳 Indian Legal Chatbot
+# Lexora — source-grounded legal research
 
-A Flask‑based Retrieval‑Augmented Legal Chatbot built for the **Indian legal system**. Upload legal documents, retrieve relevant context using ChromaDB, and generate user‑friendly answers from an LLM via Ollama.
+Lexora is a lightweight legal research workspace for asking better questions of statutes, agreements, notices, policies, and case extracts. It is deliberately designed as a **source-first** assistant: uploaded material is retrieved before an answer is generated, and every source-backed proposition should be traceable to a displayed reference.
 
----
+> **Important:** Lexora provides general informational research assistance, not legal advice. It does not create a lawyer-client relationship and is not a substitute for a qualified lawyer. Always verify current law, jurisdiction, effective dates, and the complete underlying record with a legal professional.
 
-## 🔍 Purpose
+## What changed
 
-This tool transforms legal documents into semantic vectors, enables context‑aware retrieval, and produces **structured bullet‑point responses** about Indian laws. It also supports general queries, with polite clarification that its expertise is India‑specific.
+The original Flask/Ollama/Chroma demo has been replaced with a Vercel-ready Next.js application:
 
----
+- Premium, responsive legal-tech chat UI with welcome state, attachment flow, evidence panel, mobile navigation, and subtle motion.
+- Streaming chat responses over a standard Server-Sent Events response.
+- LangGraph for the deterministic **intake → retrieval** workflow.
+- LangChain for OpenAI chat/embedding models, PDF ingestion, text splitting, prompt construction, and in-memory vector retrieval.
+- Conversation-aware query planning: recent turns help resolve follow-up questions before retrieval.
+- Evidence cards and inline `[S1]` references that reveal the retrieved excerpt, document title, and page where available.
+- Explicit abstention for unsupported legal conclusions, unrelated requests, and urgent safety situations.
+- No database, authentication, user accounts, durable document store, or background infrastructure.
 
-## 🧰 Tech Stack
+## Architecture
 
-- **Flask** backend for file upload and chat API  
-- **SentenceTransformers** `all‑MiniLM‑L6‑v2` for embeddings  
-- **ChromaDB** for vector store (`chromadb.PersistentClient`)  
-- **Ollama LLM** (`llama3.1:latest`) via `langchain_ollama`  
-- **PyMuPDF (`fitz`)** for extracting text from PDFs  
-- **markdown2** for rendering chatbot responses  
+```text
+Browser session
+  ├─ uploads PDF / TXT / MD → /api/documents
+  │    └─ LangChain PDF loader + recursive splitter → session chunks
+  └─ question + recent turns + session chunks → /api/chat (SSE)
+       └─ LangGraph: understand query → retrieve evidence
+            ├─ ChatOpenAI structured query plan
+            └─ MemoryVectorStore + OpenAI embeddings
+       └─ ChatOpenAI answer stream → tokens + [S1] source metadata
+```
 
----
+There is no persistent vector store by design. The browser keeps the current session's chunks in `sessionStorage`; the server keeps only a small, best-effort in-memory vector cache to accelerate repeat questions in a warm function. That cache expires after 30 minutes and Vercel may discard it at any time. When it does, the chat route rebuilds the index from the session chunks supplied by the browser. Do not treat the app as long-term document storage.
 
-## ⚙️ Setup & Run
+## Local setup
+
+**Prerequisites:** Node.js 20.9+, pnpm 11+, and an OpenAI API key with access to the chat and embeddings APIs.
 
 ```bash
 git clone https://github.com/MayenkJoshi37/Law_LLM.git
 cd Law_LLM
-pip install -r requirements.txt
-python app.py
+pnpm install
+Copy-Item .env.example .env.local
 ```
 
-## Access the interface at:
-```
-http://127.0.0.1:5000/
-```
+Set `OPENAI_API_KEY` in `.env.local`, then start the app:
 
-## 🗂️ Project Structure
-```
-.
-├─ app.py
-├─ requirements.txt
-├─ data/
-│  ├─ uploads/       # Storage for uploaded docs
-│  └─ chat_logs/     # JSON logs of chat sessions
-└─ chroma_db/        # Persistent ChromaDB database files
+```bash
+pnpm dev
 ```
 
----
+Open [http://localhost:3000](http://localhost:3000). Before pushing changes, use:
 
-## 🚀 Core Endpoints
+```bash
+pnpm typecheck
+pnpm build
+```
 
-| Endpoint       | Method | Description                                                  |
-|----------------|--------|--------------------------------------------------------------|
-| `/`            | GET    | Serve the frontend (`index.html`)                            |
-| `/upload`      | POST   | Upload `.txt` or `.pdf` and add to vector database           |
-| `/chat`        | POST   | Send message → retrieve context → generate response          |
-| `/clear_chat`  | POST   | Reset session memory                                         |
+## Environment variables
 
----
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | Yes | Used only on the server for LangChain chat and embedding calls. Never expose this as `NEXT_PUBLIC_*`. |
+| `OPENAI_MODEL` | No | Chat model; defaults to `gpt-4o-mini`. |
+| `LANGSMITH_TRACING` | No | Set to `true` to enable optional LangSmith tracing. |
+| `LANGSMITH_API_KEY` | With tracing | LangSmith API key. |
+| `LANGSMITH_PROJECT` | No | Trace project name; defaults to the LangSmith SDK default. |
 
-## 🧠 How It Works
+## Vercel deployment
 
-### Document Upload & Embedding
-- Upload `.txt` or `.pdf` files  
-- Extract text using PyMuPDF, segment by paragraphs  
-- Embed text chunks and store in ChromaDB with unique IDs  
+1. Push this repository to GitHub and import it in Vercel (the detected framework is Next.js).
+2. Add `OPENAI_API_KEY` in **Project Settings → Environment Variables** for Preview and Production.
+3. Optionally add `OPENAI_MODEL` and LangSmith variables.
+4. Deploy. Vercel detects `pnpm-lock.yaml` and runs the `build` script automatically.
 
-### Chat & Retrieval Loop
-- Encode user query → retrieve top‑k relevant text chunks  
-- Build a prompt using session summary, retrieved context, and Indian-law instructions  
-- LLM generates structured bullet‑point responses focused on Indian legal context  
+The API routes explicitly use the Node.js runtime and configure a 60-second function duration for document parsing and streamed answers. No writable local filesystem, database, or process-local persistence is required for a correct request.
 
-### Session Summarization & Logging
-- Summarize the last 6 messages to maintain conversational coherence  
-- Save full history, retrieved chunks, prompt, and response into JSON logs  
+## Product behavior and guardrails
 
----
+- PDFs, Markdown, and plain text files are accepted; scanned PDFs without an embedded text layer are rejected with a useful message.
+- The app limits an upload to five files at 8 MB each and keeps a bounded number of text chunks to stay responsive in a serverless environment.
+- The intake stage labels question type, rewrites a retrieval query, resolves follow-ups from recent context, and identifies missing jurisdiction or facts.
+- The answer prompt requires citations for material legal claims, refuses to invent citations, distinguishes source text from general application, and explicitly names uncertainty or missing evidence.
+- Without sources, the assistant asks for materials rather than giving a purportedly source-grounded conclusion.
+- Neither the client nor server writes chat logs, uploaded documents, or embeddings to a database.
 
-## 💬 Response Style
+## Repository map
 
-- Delivered as **bullet‑point summaries**  
-- Tone: Professional, clear, helpful, and polite  
-- Focuses on Indian laws; clarifies non‑Indian jurisdiction questions politely  
-
----
-
-## 🛠️ Customization Suggestions
-
-- Swap or fine‑tune the embedding model (`sentence‑transformers`)  
-- Adjust paragraph chunk size or add overlap for better retrieval  
-- Modify retrieval count via `n_results`  
-- Refine summarization logic or modify prompts  
-- Upgrade markdown rendering or integrate a richer UI frontend  
-- Add support for regional languages (e.g. Hindi)  
-
----
-
-## 🏛️ Contributions
-
-- **Contributing Ideas:**
-  - Add curated Indian legal datasets (e.g. IPC sections, Supreme Court judgments)  
-  - Improve prompt engineering for fairness and accuracy  
-  - Enhance session memory and summarization strategy  
-  - Support scanned PDFs, multilingual input, or speech interfaces  
-
----
-
-## ✅ Quick Summary
-
-- Upload legal documents → index via embeddings + ChromaDB  
-- User queries answered with retrieved context + LLM-generated responses  
-- Focus on Indian legal knowledge, delivered concisely in bullet points  
-- Conversations are logged and summarized for continuity  
+```text
+app/
+  api/chat/route.ts       # SSE endpoint: graph orchestration, retrieval, answer stream
+  api/documents/route.ts  # PDF/TXT/MD parsing and chunking
+  globals.css             # Responsive visual system and motion
+  page.tsx                # Product UI and streaming client
+lib/
+  legal-rag.ts            # LangGraph workflow and ephemeral vector cache
+  prompts.ts              # Query/answer guardrails
+  types.ts                # Shared research contracts
+.env.example              # Required and optional runtime variables
+vercel.json               # Vercel framework configuration
+```
