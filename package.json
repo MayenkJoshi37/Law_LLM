@@ -1,5 +1,5 @@
 {
-  "name": "lexora-legal-research",
+  "name": "kaisan-legal",
   "version": "1.0.0",
   "private": true,
   "packageManager": "pnpm@11.19.0",
@@ -10,8 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@langchain/anthropic": "^0.3.17",
     "@langchain/community": "^0.3.46",
     "@langchain/core": "^0.3.58",
+    "@langchain/google-genai": "^0.2.14",
     "@langchain/langgraph": "^0.2.74",
     "@langchain/openai": "^0.4.9",
     "@langchain/textsplitters": "^0.1.0",

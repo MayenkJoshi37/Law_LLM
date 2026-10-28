@@ -1,6 +1,8 @@
 "use client";
 
 import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Onboarding } from "@/components/onboarding";
+import type { ProviderConnection } from "@/lib/provider-config";
 import type { ChatTurn, LegalSource, QueryPlan, SessionDocument } from "@/lib/types";
 
 type Message = ChatTurn & {
@@ -88,7 +90,7 @@ function SourceCard({ source, onSelect, compact = false }: { source: LegalSource
   );
 }
 
-export default function Home() {
+function LegalWorkspace({ connection, onChangeConnection }: { connection: ProviderConnection; onChangeConnection: () => void }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [documents, setDocuments] = useState<SessionDocument[]>([]);
   const [draft, setDraft] = useState("");
@@ -112,22 +114,22 @@ export default function Home() {
   );
 
   useEffect(() => {
-    const existing = sessionStorage.getItem("lexora-session-id");
+    const existing = sessionStorage.getItem("kaisan-legal-session-id");
     const id = existing || crypto.randomUUID();
-    sessionStorage.setItem("lexora-session-id", id);
+    sessionStorage.setItem("kaisan-legal-session-id", id);
     setSessionId(id);
     try {
-      const stored = sessionStorage.getItem("lexora-session-documents");
+      const stored = sessionStorage.getItem("kaisan-legal-session-documents");
       if (stored) setDocuments(JSON.parse(stored));
     } catch {
-      sessionStorage.removeItem("lexora-session-documents");
+      sessionStorage.removeItem("kaisan-legal-session-documents");
     }
   }, []);
 
   useEffect(() => {
     if (!sessionId) return;
     try {
-      sessionStorage.setItem("lexora-session-documents", JSON.stringify(documents));
+      sessionStorage.setItem("kaisan-legal-session-documents", JSON.stringify(documents));
     } catch {
       // The UI remains functional if the browser declines session storage for a large document set.
     }
@@ -186,8 +188,8 @@ export default function Home() {
     setIsStreaming(false);
     setPlanLabel("Ready to research");
     const id = crypto.randomUUID();
-    sessionStorage.setItem("lexora-session-id", id);
-    sessionStorage.removeItem("lexora-session-documents");
+    sessionStorage.setItem("kaisan-legal-session-id", id);
+    sessionStorage.removeItem("kaisan-legal-session-documents");
     setSessionId(id);
     setMobileMenuOpen(false);
   }
@@ -223,7 +225,7 @@ export default function Home() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, history: priorHistory, documents, sessionId }),
+        body: JSON.stringify({ message, history: priorHistory, documents, sessionId, connection }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
@@ -292,7 +294,7 @@ export default function Home() {
       <aside className={`navigation ${mobileMenuOpen ? "navigation-open" : ""}`}>
         <div className="nav-brand">
           <div className="brand-mark"><Icon name="spark" size={19} /></div>
-          <span>lexora</span>
+          <span>Kaisan Legal</span>
           <button className="mobile-close" onClick={() => setMobileMenuOpen(false)} aria-label="Close navigation"><Icon name="x" /></button>
         </div>
         <button className="new-research" onClick={resetResearch}><Icon name="plus" size={17} /><span>New research</span><kbd>⌘ K</kbd></button>
@@ -315,6 +317,7 @@ export default function Home() {
 
         <div className="nav-bottom">
           <div className="notice-compact"><Icon name="info" size={15} /><span>Informational research, not legal advice.</span></div>
+          <button className="clear-session" onClick={onChangeConnection}><Icon name="shield" size={15} /> Change provider</button>
           <button className="clear-session" onClick={resetResearch}><Icon name="trash" size={15} /> Clear session</button>
         </div>
       </aside>
@@ -335,7 +338,7 @@ export default function Home() {
             <section className="welcome-state">
               <div className="eyebrow"><span /> Source-grounded legal research</div>
               <h1>Legal clarity,<br /><em>without the fog.</em></h1>
-              <p>Ask a question, add source material, and follow each answer back to the evidence. Lexora helps you examine legal text — it does not replace professional counsel.</p>
+              <p>Ask a question, add source material, and follow each answer back to the evidence. Kaisan Legal helps you examine legal text — it does not replace professional counsel.</p>
               <div className="welcome-actions">
                 <button className="primary-action" onClick={() => fileInputRef.current?.click()}><Icon name="paperclip" size={17} /> Add source material</button>
                 <button className="text-action" onClick={() => composerRef.current?.focus()}>Ask without documents <Icon name="arrow" size={16} /></button>
@@ -350,7 +353,7 @@ export default function Home() {
                 <article className={`message ${message.role === "user" ? "message-user" : "message-assistant"}`} key={message.id}>
                   {message.role === "assistant" && <div className="assistant-avatar"><Icon name="spark" size={15} /></div>}
                   <div className="message-content">
-                    <div className="message-label">{message.role === "user" ? "You" : "Lexora"}{message.streaming && <span className="streaming-label"><i /> Analysing</span>}</div>
+                    <div className="message-label">{message.role === "user" ? "You" : "Kaisan Legal"}{message.streaming && <span className="streaming-label"><i /> Analysing</span>}</div>
                     {message.role === "user" ? <p className="user-copy">{message.content}</p> : (
                       <>
                         {message.content ? <AnswerText value={message.content} onCitation={(id) => {
@@ -407,4 +410,11 @@ export default function Home() {
       {sourceDrawerOpen && <button className="evidence-backdrop" onClick={() => setSourceDrawerOpen(false)} aria-label="Close evidence" />}
     </main>
   );
+}
+
+export default function Home() {
+  const [connection, setConnection] = useState<ProviderConnection | null>(null);
+  return connection
+    ? <LegalWorkspace connection={connection} onChangeConnection={() => setConnection(null)} />
+    : <Onboarding onReady={setConnection} />;
 }
