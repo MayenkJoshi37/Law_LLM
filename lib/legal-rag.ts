@@ -1,9 +1,10 @@
 import { Document } from "@langchain/core/documents";
-import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
+import { Embeddings } from "@langchain/core/embeddings";
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import { z } from "zod";
 import { answerPrompt, QUERY_UNDERSTANDING_PROMPT } from "./prompts";
+import { createChatModel, type ProviderConnection } from "./providers";
 import type { ChatTurn, LegalSource, QueryPlan, SessionDocument } from "./types";
 
 const MAX_DOCUMENTS = 60;
@@ -41,25 +42,41 @@ type RetrievedEvidence = {
 };
 
 type LegalRagGlobal = typeof globalThis & {
-  __lexoraVectorCache?: Map<string, VectorCacheEntry>;
+  __kaisanVectorCache?: Map<string, VectorCacheEntry>;
 };
 
 function vectorCache() {
   const target = globalThis as LegalRagGlobal;
-  target.__lexoraVectorCache ??= new Map();
-  return target.__lexoraVectorCache;
+  target.__kaisanVectorCache ??= new Map();
+  return target.__kaisanVectorCache;
 }
 
-function configuredModel() {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is not configured.");
+/**
+ * Keeps retrieval provider-neutral: a selected chat provider is the only external
+ * credential required. This is deliberately lightweight for ephemeral Vercel sessions.
+ */
+class LocalLegalEmbeddings extends Embeddings {
+  private readonly dimensions = 384;
+
+  private embed(text: string) {
+    const vector = new Array<number>(this.dimensions).fill(0);
+    const terms = text.toLowerCase().match(/[a-z0-9]{2,}/g) ?? [];
+    for (const term of terms) {
+      let hash = 2166136261;
+      for (let index = 0; index < term.length; index += 1) hash = Math.imul(hash ^ term.charCodeAt(index), 16777619);
+      vector[(hash >>> 0) % this.dimensions] += 1;
+    }
+    const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
+    return vector.map((value) => value / magnitude);
   }
 
-  return new ChatOpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-    temperature: 0.15,
-  });
+  async embedDocuments(documents: string[]) {
+    return documents.map((document) => this.embed(document));
+  }
+
+  async embedQuery(document: string) {
+    return this.embed(document);
+  }
 }
 
 function documentFingerprint(documents: SessionDocument[]) {
@@ -107,7 +124,7 @@ async function getStore(sessionId: string, chunks: SessionDocument[]) {
 
   const store = await MemoryVectorStore.fromDocuments(
     asDocuments(chunks),
-    new OpenAIEmbeddings({ apiKey: process.env.OPENAI_API_KEY, model: "text-embedding-3-small" }),
+    new LocalLegalEmbeddings({}),
   );
 
   cache.set(sessionId, { fingerprint, store, touchedAt: Date.now() });
@@ -146,6 +163,7 @@ const LegalState = Annotation.Root({
   history: Annotation<ChatTurn[]>,
   documents: Annotation<SessionDocument[]>,
   sessionId: Annotation<string>,
+  connection: Annotation<ProviderConnection>,
   plan: Annotation<QueryPlan>,
   evidence: Annotation<RetrievedEvidence[]>({ value: (_, next) => next, default: () => [] }),
 });
@@ -169,15 +187,33 @@ async function understandQuestion(state: typeof LegalState.State) {
     .slice(-6)
     .map((turn) => `${turn.role}: ${turn.content}`)
     .join("\n");
-  const planner = configuredModel().withStructuredOutput(queryPlanSchema, { name: "legal_query_plan" });
-  const plan = await planner.invoke([
+  const response = await createChatModel(state.connection).invoke([
     ["system", QUERY_UNDERSTANDING_PROMPT],
     [
       "human",
       `Recent conversation:\n${history || "(none)"}\n\nLatest message:\n${state.question}\n\nUploaded source count: ${state.documents.length}`,
     ],
   ]);
-  return { plan };
+  const raw = typeof response.content === "string" ? response.content : "";
+  const match = raw.match(/\{[\s\S]*\}/);
+  let parsed: ReturnType<typeof queryPlanSchema.safeParse> | undefined;
+  try {
+    parsed = match ? queryPlanSchema.safeParse(JSON.parse(match[0])) : undefined;
+  } catch {
+    parsed = undefined;
+  }
+  if (parsed?.success) return { plan: parsed.data };
+  return {
+    plan: {
+      intent: "legal_research",
+      searchQuery: state.question,
+      shouldRetrieve: state.documents.length > 0,
+      needsClarification: state.documents.length === 0,
+      clarificationQuestion: state.documents.length === 0 ? "Which jurisdiction and source material should I use?" : null,
+      jurisdictionMentioned: null,
+      riskLevel: "standard",
+    } satisfies QueryPlan,
+  };
 }
 
 async function retrieveEvidence(state: typeof LegalState.State) {
@@ -236,12 +272,14 @@ export async function prepareLegalResearch(input: {
   history: ChatTurn[];
   documents: SessionDocument[];
   sessionId: string;
+  connection: ProviderConnection;
 }) {
   return legalWorkflow.invoke({
     question: input.question,
     history: input.history,
     documents: input.documents,
     sessionId: input.sessionId,
+    connection: input.connection,
   });
 }
 
@@ -250,6 +288,7 @@ export async function streamLegalAnswer(input: {
   plan: QueryPlan;
   evidence: RetrievedEvidence[];
   history: ChatTurn[];
+  connection: ProviderConnection;
 }) {
   const sourceText = input.evidence.map(sourceBlock).join("\n\n");
   const planText = [
@@ -266,7 +305,7 @@ export async function streamLegalAnswer(input: {
   const conversation: ["user" | "assistant", string][] = input.history
     .slice(-8)
     .map((turn) => [turn.role, turn.content]);
-  return configuredModel().stream([
+  return createChatModel(input.connection).stream([
     ["system", answerPrompt({ question: input.question, plan: planText, sources: sourceText })],
     ...conversation,
     ["human", input.question],

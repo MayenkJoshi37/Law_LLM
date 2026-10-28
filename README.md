@@ -1,101 +1,72 @@
-# Lexora — source-grounded legal research
+# Kaisan Legal
 
-Lexora is a lightweight legal research workspace for asking better questions of statutes, agreements, notices, policies, and case extracts. It is deliberately designed as a **source-first** assistant: uploaded material is retrieved before an answer is generated, and every source-backed proposition should be traceable to a displayed reference.
+Kaisan Legal is a lightweight, source-grounded legal research workspace. Upload legal materials, connect your own LLM provider, and receive streamed answers that cite the retrieved text.
 
-> **Important:** Lexora provides general informational research assistance, not legal advice. It does not create a lawyer-client relationship and is not a substitute for a qualified lawyer. Always verify current law, jurisdiction, effective dates, and the complete underlying record with a legal professional.
+> Kaisan Legal provides informational research support only. It is not legal advice, does not create a lawyer-client relationship, and is not a substitute for a qualified lawyer.
 
-## What changed
+## What it does
 
-The original Flask/Ollama/Chroma demo has been replaced with a Vercel-ready Next.js application:
+- Guides each new browser session through provider selection, API-key entry, model selection, connection verification, and the research workspace.
+- Supports OpenAI, Google Gemini, Groq, Anthropic Claude, and OpenRouter. The exact selected provider and model are displayed before entering the workspace.
+- Accepts PDF, TXT, and Markdown files (up to five files, 8 MB each), then uses LangChain loaders and splitting to prepare session-only chunks.
+- Uses a LangGraph intake → retrieval workflow, a provider-neutral in-memory vector index, conversation context, and a streamed LangChain answer model.
+- Shows retrieved material as source cards and inline `[S1]` citations. Prompts explicitly distinguish supplied material from general reasoning and require abstention when evidence is missing.
 
-- Premium, responsive legal-tech chat UI with welcome state, attachment flow, evidence panel, mobile navigation, and subtle motion.
-- Streaming chat responses over a standard Server-Sent Events response.
-- LangGraph for the deterministic **intake → retrieval** workflow.
-- LangChain for OpenAI chat/embedding models, PDF ingestion, text splitting, prompt construction, and in-memory vector retrieval.
-- Conversation-aware query planning: recent turns help resolve follow-up questions before retrieval.
-- Evidence cards and inline `[S1]` references that reveal the retrieved excerpt, document title, and page where available.
-- Explicit abstention for unsupported legal conclusions, unrelated requests, and urgent safety situations.
-- No database, authentication, user accounts, durable document store, or background infrastructure.
+## Credential and data handling
 
-## Architecture
+This is a bring-your-own-key application. A provider key is held only in live React memory; it is not placed in `localStorage`, `sessionStorage`, a database, logs, source control, or Vercel environment variables. The browser sends it over HTTPS only to the request-scoped Vercel API call that invokes the selected provider. Reloading the page clears it.
 
-```text
-Browser session
-  ├─ uploads PDF / TXT / MD → /api/documents
-  │    └─ LangChain PDF loader + recursive splitter → session chunks
-  └─ question + recent turns + session chunks → /api/chat (SSE)
-       └─ LangGraph: understand query → retrieve evidence
-            ├─ ChatOpenAI structured query plan
-            └─ MemoryVectorStore + OpenAI embeddings
-       └─ ChatOpenAI answer stream → tokens + [S1] source metadata
-```
-
-There is no persistent vector store by design. The browser keeps the current session's chunks in `sessionStorage`; the server keeps only a small, best-effort in-memory vector cache to accelerate repeat questions in a warm function. That cache expires after 30 minutes and Vercel may discard it at any time. When it does, the chat route rebuilds the index from the session chunks supplied by the browser. Do not treat the app as long-term document storage.
+Uploaded chunks live in browser `sessionStorage` for the active session. The server may maintain a small, expiring in-memory retrieval cache for warm requests; it is never required for correctness and is not durable storage.
 
 ## Local setup
 
-**Prerequisites:** Node.js 20.9+, pnpm 11+, and an OpenAI API key with access to the chat and embeddings APIs.
+Prerequisites: Node.js 20.9+ and pnpm 11+.
 
 ```bash
 git clone https://github.com/MayenkJoshi37/Law_LLM.git
 cd Law_LLM
 pnpm install
-Copy-Item .env.example .env.local
-```
-
-Set `OPENAI_API_KEY` in `.env.local`, then start the app:
-
-```bash
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Before pushing changes, use:
+Open [http://localhost:3000](http://localhost:3000), select a provider, enter a key, confirm the model, verify the connection, and upload a text-based PDF, TXT, or Markdown file.
+
+No provider key is required in `.env.local`. `.env.example` contains only optional tracing placeholders; do not add `NEXT_PUBLIC_*` provider secrets.
+
+Before shipping changes:
 
 ```bash
 pnpm typecheck
 pnpm build
 ```
 
-## Environment variables
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `OPENAI_API_KEY` | Yes | Used only on the server for LangChain chat and embedding calls. Never expose this as `NEXT_PUBLIC_*`. |
-| `OPENAI_MODEL` | No | Chat model; defaults to `gpt-4o-mini`. |
-| `LANGSMITH_TRACING` | No | Set to `true` to enable optional LangSmith tracing. |
-| `LANGSMITH_API_KEY` | With tracing | LangSmith API key. |
-| `LANGSMITH_PROJECT` | No | Trace project name; defaults to the LangSmith SDK default. |
-
 ## Vercel deployment
 
-1. Push this repository to GitHub and import it in Vercel (the detected framework is Next.js).
-2. Add `OPENAI_API_KEY` in **Project Settings → Environment Variables** for Preview and Production.
-3. Optionally add `OPENAI_MODEL` and LangSmith variables.
-4. Deploy. Vercel detects `pnpm-lock.yaml` and runs the `build` script automatically.
+1. Push the repository to GitHub and import it into Vercel as a Next.js project.
+2. Use Node.js 20.9 or later (Vercel detects the lockfile and runs `pnpm build`).
+3. Do **not** add end-user provider keys to Vercel environment variables. Each user configures their own provider at runtime.
+4. Deploy. The document and chat routes use Vercel's Node.js runtime and stream standard SSE responses.
 
-The API routes explicitly use the Node.js runtime and configure a 60-second function duration for document parsing and streamed answers. No writable local filesystem, database, or process-local persistence is required for a correct request.
+No database, authentication, filesystem persistence, or background worker is needed. Vercel's 60-second route duration is configured for parsing and streamed research answers.
 
-## Product behavior and guardrails
+## Architecture
 
-- PDFs, Markdown, and plain text files are accepted; scanned PDFs without an embedded text layer are rejected with a useful message.
-- The app limits an upload to five files at 8 MB each and keeps a bounded number of text chunks to stay responsive in a serverless environment.
-- The intake stage labels question type, rewrites a retrieval query, resolves follow-ups from recent context, and identifies missing jurisdiction or facts.
-- The answer prompt requires citations for material legal claims, refuses to invent citations, distinguishes source text from general application, and explicitly names uncertainty or missing evidence.
-- Without sources, the assistant asks for materials rather than giving a purportedly source-grounded conclusion.
-- Neither the client nor server writes chat logs, uploaded documents, or embeddings to a database.
+```text
+Landing → provider + key → model → verify → research workspace
+Browser upload → /api/documents → LangChain PDF/text split → session chunks
+Browser question + session connection → /api/chat (SSE)
+  → LangGraph: understand question → retrieve evidence
+  → selected LangChain provider model → streamed cited answer
+```
 
 ## Repository map
 
 ```text
-app/
-  api/chat/route.ts       # SSE endpoint: graph orchestration, retrieval, answer stream
-  api/documents/route.ts  # PDF/TXT/MD parsing and chunking
-  globals.css             # Responsive visual system and motion
-  page.tsx                # Product UI and streaming client
-lib/
-  legal-rag.ts            # LangGraph workflow and ephemeral vector cache
-  prompts.ts              # Query/answer guardrails
-  types.ts                # Shared research contracts
-.env.example              # Required and optional runtime variables
-vercel.json               # Vercel framework configuration
+app/api/chat/route.ts                streamed research endpoint
+app/api/documents/route.ts           PDF/TXT/MD processing
+app/api/providers/verify/route.ts    request-scoped provider validation
+components/onboarding.tsx            landing and setup flow
+lib/providers.ts                     provider model factories and validation
+lib/legal-rag.ts                     LangGraph workflow and retrieval cache
+lib/prompts.ts                       legal guardrails
 ```

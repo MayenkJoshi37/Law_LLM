@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { fallbackFor, normalizeDocuments, prepareLegalResearch, streamLegalAnswer } from "@/lib/legal-rag";
+import { providerErrorMessage, providerSchema } from "@/lib/providers";
 import type { ChatTurn } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -48,11 +49,18 @@ export async function POST(request: NextRequest) {
   const documents = normalizeDocuments(body.documents);
   const history = safeHistory(body.history);
   const sessionId = safeSessionId(body.sessionId);
+  const connection = providerSchema.safeParse(body.connection);
+  if (!connection.success) {
+    return Response.json(
+      { error: "Connect an LLM provider and model before starting research." },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const research = await prepareLegalResearch({ question, history, documents, sessionId });
+        const research = await prepareLegalResearch({ question, history, documents, sessionId, connection: connection.data });
         controller.enqueue(event("sources", {
           sources: research.evidence.map((item) => item.source),
           plan: research.plan,
@@ -67,6 +75,7 @@ export async function POST(request: NextRequest) {
             plan: research.plan,
             evidence: research.evidence,
             history,
+            connection: connection.data,
           });
           for await (const chunk of answer) {
             const text = typeof chunk.content === "string" ? chunk.content : "";
@@ -75,11 +84,7 @@ export async function POST(request: NextRequest) {
         }
         controller.enqueue(event("done", {}));
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unable to complete legal research.";
-        const friendly = message.includes("OPENAI_API_KEY")
-          ? "The research service is not configured yet. Add OPENAI_API_KEY to your environment and try again."
-          : "I couldn’t complete that research request. Please try again in a moment.";
-        controller.enqueue(event("error", { message: friendly }));
+        controller.enqueue(event("error", { message: providerErrorMessage(error) }));
       } finally {
         controller.close();
       }
